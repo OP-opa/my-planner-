@@ -11,6 +11,22 @@
   <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script type="module" id="firebase-init">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+    import { getDatabase, ref, onValue, set, remove } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+    const firebaseConfig = {
+      apiKey: "AIzaSyCar1hXhuu3zknhxF2TpasqOQ04FRJZ0S8",
+      authDomain: "planner-e4a4a.firebaseapp.com",
+      databaseURL: "https://planner-e4a4a-default-rtdb.europe-west1.firebasedatabase.app",
+      projectId: "planner-e4a4a",
+      storageBucket: "planner-e4a4a.firebasestorage.app",
+      messagingSenderId: "973695522643",
+      appId: "1:973695522643:web:efd42ac41940baf5a073a6"
+    };
+    const app = initializeApp(firebaseConfig);
+    const db = getDatabase(app);
+    window._firebase = { ref, onValue, set, remove, db };
+  </script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: #11111b; font-family: -apple-system, 'Inter', system-ui, sans-serif; color: #e2e8f0; overscroll-behavior: none; }
@@ -28,10 +44,14 @@ const PCOL = { Low: "#6ee7b7", Medium: "#fcd34d", High: "#f87171" };
 const DEFAULT_TAGS = ["work", "personal", "ideas", "urgent"];
 const uid = () => Math.random().toString(36).slice(2, 10);
 
-// ── Storage helpers (localStorage for standalone PWA) ─────────
-const store = {
-  get: k => { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } },
-  set: (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} }
+// ── Firebase helpers ──────────────────────────────────────────
+const fbGet = (room, key, cb) => {
+  const { ref, onValue, db } = window._firebase;
+  onValue(ref(db, `rooms/${room}/${key}`), snap => cb(snap.exists() ? snap.val() : null));
+};
+const fbSet = (room, key, val) => {
+  const { ref, set, db } = window._firebase;
+  set(ref(db, `rooms/${room}/${key}`), val);
 };
 
 // ── Task Row ──────────────────────────────────────────────────
