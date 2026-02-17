@@ -8,57 +8,66 @@
   <meta name="apple-mobile-web-app-title" content="My Planner" />
   <meta name="theme-color" content="#11111b" />
   <title>My Planner & Notes</title>
+
+  <!-- Firebase (compat SDK — no import needed) -->
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+
+  <!-- React -->
   <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-  <script type="module" id="firebase-init">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-    import { getDatabase, ref, onValue, set, remove } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
-    const firebaseConfig = {
-      apiKey: "AIzaSyCar1hXhuu3zknhxF2TpasqOQ04FRJZ0S8",
-      authDomain: "planner-e4a4a.firebaseapp.com",
-      databaseURL: "https://planner-e4a4a-default-rtdb.europe-west1.firebasedatabase.app",
-      projectId: "planner-e4a4a",
-      storageBucket: "planner-e4a4a.firebasestorage.app",
-      messagingSenderId: "973695522643",
-      appId: "1:973695522643:web:efd42ac41940baf5a073a6"
-    };
-    const app = initializeApp(firebaseConfig);
-    const db = getDatabase(app);
-    window._firebase = { ref, onValue, set, remove, db };
-  </script>
+
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: #11111b; font-family: -apple-system, 'Inter', system-ui, sans-serif; color: #e2e8f0; overscroll-behavior: none; }
     input, textarea, select, button { font-family: inherit; }
-    ::-webkit-scrollbar { width: 6px; } ::-webkit-scrollbar-track { background: #1e1e2e; } ::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: #1e1e2e; }
+    ::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
   </style>
 </head>
 <body>
 <div id="root"></div>
+
+<script>
+  // Init Firebase (compat)
+  const firebaseConfig = {
+    apiKey: "AIzaSyCar1hXhuu3zknhxF2TpasqOQ04FRJZ0S8",
+    authDomain: "planner-e4a4a.firebaseapp.com",
+    databaseURL: "https://planner-e4a4a-default-rtdb.europe-west1.firebasedatabase.app",
+    projectId: "planner-e4a4a",
+    storageBucket: "planner-e4a4a.firebasestorage.app",
+    messagingSenderId: "973695522643",
+    appId: "1:973695522643:web:efd42ac41940baf5a073a6"
+  };
+  firebase.initializeApp(firebaseConfig);
+  const db = firebase.database();
+
+  function fbListen(room, key, cb) {
+    db.ref("rooms/" + room + "/" + key).on("value", snap => cb(snap.val()));
+  }
+  function fbSet(room, key, val) {
+    db.ref("rooms/" + room + "/" + key).set(val);
+  }
+  function fbOff(room, key) {
+    db.ref("rooms/" + room + "/" + key).off();
+  }
+</script>
+
 <script type="text/babel">
-const { useState, useEffect } = React;
+const { useState, useEffect, useRef } = React;
 
 const PRIORITIES = ["Low", "Medium", "High"];
 const PCOL = { Low: "#6ee7b7", Medium: "#fcd34d", High: "#f87171" };
 const DEFAULT_TAGS = ["work", "personal", "ideas", "urgent"];
 const uid = () => Math.random().toString(36).slice(2, 10);
 
-// ── Firebase helpers ──────────────────────────────────────────
-const fbGet = (room, key, cb) => {
-  const { ref, onValue, db } = window._firebase;
-  onValue(ref(db, `rooms/${room}/${key}`), snap => cb(snap.exists() ? snap.val() : null));
-};
-const fbSet = (room, key, val) => {
-  const { ref, set, db } = window._firebase;
-  set(ref(db, `rooms/${room}/${key}`), val);
-};
-
 // ── Task Row ──────────────────────────────────────────────────
 function TaskRow({ task, onToggle, onDelete }) {
   return (
     <div style={{ display:"flex", alignItems:"center", gap:8, padding:"8px 0", borderBottom:"1px solid #2a2a3a" }}>
-      <input type="checkbox" checked={task.done} onChange={() => onToggle(task.id)}
+      <input type="checkbox" checked={!!task.done} onChange={() => onToggle(task.id)}
         style={{ accentColor:"#818cf8", width:18, height:18, cursor:"pointer", flexShrink:0 }} />
       <span style={{ flex:1, fontSize:15, color:task.done?"#555":"#e2e8f0", textDecoration:task.done?"line-through":"none" }}>
         {task.text}
@@ -67,7 +76,7 @@ function TaskRow({ task, onToggle, onDelete }) {
         {task.priority}
       </span>
       <button onClick={() => onDelete(task.id)}
-        style={{ background:"none", border:"none", color:"#555", cursor:"pointer", fontSize:20, lineHeight:1, padding:"0 4px" }}>×</button>
+        style={{ background:"none", border:"none", color:"#555", cursor:"pointer", fontSize:22, lineHeight:1, padding:"0 4px" }}>×</button>
     </div>
   );
 }
@@ -76,10 +85,15 @@ function TaskRow({ task, onToggle, onDelete }) {
 function AddTask({ onAdd }) {
   const [text, setText] = useState("");
   const [pri, setPri] = useState("Medium");
-  const submit = () => { if (!text.trim()) return; onAdd({ id:uid(), text:text.trim(), priority:pri, done:false }); setText(""); };
+  const submit = () => {
+    if (!text.trim()) return;
+    onAdd({ id: uid(), text: text.trim(), priority: pri, done: false });
+    setText("");
+  };
   return (
     <div style={{ display:"flex", gap:6, marginTop:10 }}>
-      <input value={text} onChange={e => setText(e.target.value)} onKeyDown={e => e.key==="Enter" && submit()}
+      <input value={text} onChange={e => setText(e.target.value)}
+        onKeyDown={e => e.key === "Enter" && submit()}
         placeholder="Add task…"
         style={{ flex:1, background:"#1e1e2e", border:"1px solid #333", borderRadius:8, padding:"8px 12px", color:"#e2e8f0", fontSize:14 }} />
       <select value={pri} onChange={e => setPri(e.target.value)}
@@ -112,15 +126,19 @@ function NoteCard({ note, onEdit, onDelete }) {
           </div>
           {note.body ? <p style={{ color:"#94a3b8", fontSize:14, lineHeight:1.6, marginBottom:8 }}>{note.body}</p> : null}
           <div style={{ display:"flex", flexWrap:"wrap", gap:5 }}>
-            {note.tags.map(t => <span key={t} style={{ fontSize:12, padding:"2px 9px", borderRadius:99, background:"#312e81", color:"#a5b4fc" }}>#{t}</span>)}
-            {note.reminder && <span style={{ fontSize:12, padding:"2px 9px", borderRadius:99, background:"#1e3a5f", color:"#7dd3fc" }}>
-              ⏰ {new Date(note.reminder).toLocaleString([],{month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"})}
-            </span>}
+            {(note.tags||[]).map(t => <span key={t} style={{ fontSize:12, padding:"2px 9px", borderRadius:99, background:"#312e81", color:"#a5b4fc" }}>#{t}</span>)}
+            {note.reminder && (
+              <span style={{ fontSize:12, padding:"2px 9px", borderRadius:99, background:"#1e3a5f", color:"#7dd3fc" }}>
+                ⏰ {new Date(note.reminder).toLocaleString([],{month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"})}
+              </span>
+            )}
           </div>
         </div>
         <div style={{ display:"flex", flexDirection:"column", gap:5 }}>
-          <button onClick={() => onEdit(note)} style={{ background:"#2a2a3a", border:"none", borderRadius:7, padding:"6px 12px", color:"#94a3b8", cursor:"pointer", fontSize:13 }}>Edit</button>
-          <button onClick={() => onDelete(note.id)} style={{ background:"#2a2a3a", border:"none", borderRadius:7, padding:"6px 12px", color:"#f87171", cursor:"pointer", fontSize:13 }}>Del</button>
+          <button onClick={() => onEdit(note)}
+            style={{ background:"#2a2a3a", border:"none", borderRadius:7, padding:"6px 12px", color:"#94a3b8", cursor:"pointer", fontSize:13 }}>Edit</button>
+          <button onClick={() => onDelete(note.id)}
+            style={{ background:"#2a2a3a", border:"none", borderRadius:7, padding:"6px 12px", color:"#f87171", cursor:"pointer", fontSize:13 }}>Del</button>
         </div>
       </div>
     </div>
@@ -136,45 +154,59 @@ function NoteModal({ note, onSave, onClose, allTags }) {
   const [tagInput, setTagInput] = useState("");
   const [reminder, setReminder] = useState(note?.reminder || "");
 
-  const toggleTag = t => setTags(p => p.includes(t) ? p.filter(x => x!==t) : [...p,t]);
-  const addTag = () => { const t=tagInput.trim().toLowerCase(); if(t&&!tags.includes(t)) setTags(p=>[...p,t]); setTagInput(""); };
-  const save = () => { if(!title.trim()) return; onSave({ id:note?note.id:uid(), title:title.trim(), body, priority, tags, reminder }); };
+  const toggleTag = t => setTags(p => p.includes(t) ? p.filter(x => x !== t) : [...p, t]);
+  const addTag = () => {
+    const t = tagInput.trim().toLowerCase();
+    if (t && !tags.includes(t)) setTags(p => [...p, t]);
+    setTagInput("");
+  };
+  const save = () => {
+    if (!title.trim()) return;
+    onSave({ id: note ? note.id : uid(), title: title.trim(), body, priority, tags, reminder });
+  };
 
   const inp = { background:"#1e1e2e", border:"1px solid #333", borderRadius:8, padding:"10px 12px", color:"#e2e8f0", fontSize:15, width:"100%" };
   return (
     <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.75)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:200, padding:16 }}>
       <div style={{ background:"#181825", border:"1px solid #2a2a3a", borderRadius:18, padding:24, width:"100%", maxWidth:500, display:"flex", flexDirection:"column", gap:14, maxHeight:"90vh", overflowY:"auto" }}>
         <h3 style={{ color:"#e2e8f0", fontSize:18 }}>{note ? "Edit Note" : "New Note"}</h3>
-        <input style={inp} placeholder="Title" value={title} onChange={e=>setTitle(e.target.value)} />
-        <textarea style={{...inp, minHeight:80, resize:"vertical"}} placeholder="Body…" value={body} onChange={e=>setBody(e.target.value)} />
+        <input style={inp} placeholder="Title" value={title} onChange={e => setTitle(e.target.value)} />
+        <textarea style={{...inp, minHeight:80, resize:"vertical"}} placeholder="Body…" value={body} onChange={e => setBody(e.target.value)} />
         <div>
           <div style={{ color:"#94a3b8", fontSize:12, fontWeight:600, textTransform:"uppercase", letterSpacing:1, marginBottom:8 }}>Priority</div>
           <div style={{ display:"flex", gap:8 }}>
-            {PRIORITIES.map(p => <button key={p} onClick={()=>setPri(p)}
-              style={{ flex:1, border:"none", borderRadius:99, padding:"6px 0", cursor:"pointer", fontSize:13, fontWeight:600,
-                background:priority===p?PCOL[p]+"44":"#2a2a3a", color:priority===p?PCOL[p]:"#94a3b8" }}>{p}</button>)}
+            {PRIORITIES.map(p => (
+              <button key={p} onClick={() => setPri(p)}
+                style={{ flex:1, border:"none", borderRadius:99, padding:"6px 0", cursor:"pointer", fontSize:13, fontWeight:600,
+                  background: priority===p ? PCOL[p]+"44" : "#2a2a3a", color: priority===p ? PCOL[p] : "#94a3b8" }}>{p}</button>
+            ))}
           </div>
         </div>
         <div>
           <div style={{ color:"#94a3b8", fontSize:12, fontWeight:600, textTransform:"uppercase", letterSpacing:1, marginBottom:8 }}>Tags</div>
           <div style={{ display:"flex", flexWrap:"wrap", gap:6, marginBottom:8 }}>
-            {allTags.map(t => <button key={t} onClick={()=>toggleTag(t)}
-              style={{ border:"none", borderRadius:99, padding:"4px 12px", cursor:"pointer", fontSize:13,
-                background:tags.includes(t)?"#312e81":"#2a2a3a", color:tags.includes(t)?"#a5b4fc":"#94a3b8" }}>#{t}</button>)}
+            {allTags.map(t => (
+              <button key={t} onClick={() => toggleTag(t)}
+                style={{ border:"none", borderRadius:99, padding:"4px 12px", cursor:"pointer", fontSize:13,
+                  background: tags.includes(t) ? "#312e81" : "#2a2a3a", color: tags.includes(t) ? "#a5b4fc" : "#94a3b8" }}>#{t}</button>
+            ))}
           </div>
           <div style={{ display:"flex", gap:6 }}>
             <input style={{...inp, width:"auto", flex:1}} placeholder="Custom tag…" value={tagInput}
-              onChange={e=>setTagInput(e.target.value)} onKeyDown={e=>e.key==="Enter"&&addTag()} />
-            <button onClick={addTag} style={{ background:"#312e81", border:"none", borderRadius:8, padding:"10px 14px", color:"#a5b4fc", cursor:"pointer", fontWeight:600 }}>Add</button>
+              onChange={e => setTagInput(e.target.value)} onKeyDown={e => e.key==="Enter" && addTag()} />
+            <button onClick={addTag}
+              style={{ background:"#312e81", border:"none", borderRadius:8, padding:"10px 14px", color:"#a5b4fc", cursor:"pointer", fontWeight:600 }}>Add</button>
           </div>
         </div>
         <div>
           <div style={{ color:"#94a3b8", fontSize:12, fontWeight:600, textTransform:"uppercase", letterSpacing:1, marginBottom:8 }}>Reminder</div>
-          <input type="datetime-local" style={inp} value={reminder} onChange={e=>setReminder(e.target.value)} />
+          <input type="datetime-local" style={inp} value={reminder} onChange={e => setReminder(e.target.value)} />
         </div>
         <div style={{ display:"flex", gap:8, justifyContent:"flex-end", marginTop:4 }}>
-          <button onClick={onClose} style={{ background:"#2a2a3a", border:"none", borderRadius:8, padding:"10px 20px", color:"#94a3b8", cursor:"pointer", fontSize:15 }}>Cancel</button>
-          <button onClick={save} style={{ background:"#6366f1", border:"none", borderRadius:8, padding:"10px 22px", color:"#fff", fontWeight:700, cursor:"pointer", fontSize:15 }}>Save</button>
+          <button onClick={onClose}
+            style={{ background:"#2a2a3a", border:"none", borderRadius:8, padding:"10px 20px", color:"#94a3b8", cursor:"pointer", fontSize:15 }}>Cancel</button>
+          <button onClick={save}
+            style={{ background:"#6366f1", border:"none", borderRadius:8, padding:"10px 22px", color:"#fff", fontWeight:700, cursor:"pointer", fontSize:15 }}>Save</button>
         </div>
       </div>
     </div>
@@ -183,36 +215,110 @@ function NoteModal({ note, onSave, onClose, allTags }) {
 
 // ── Main App ──────────────────────────────────────────────────
 function App() {
+  const [room, setRoom] = useState(() => localStorage.getItem("plannerRoom") || "");
+  const [roomInput, setRoomInput] = useState("");
   const [tab, setTab] = useState("planner");
-  const [todayTasks, setTT] = useState(() => store.get("tt") || []);
-  const [tomorrowTasks, setTM] = useState(() => store.get("tm") || []);
-  const [todayGoal, setTG] = useState(() => store.get("tg") || "");
-  const [tomorrowGoal, setMG] = useState(() => store.get("mg") || "");
-  const [notes, setNotes] = useState(() => store.get("notes") || []);
+  const [todayTasks, setTT] = useState([]);
+  const [tomorrowTasks, setTM] = useState([]);
+  const [todayGoal, setTG] = useState("");
+  const [tomorrowGoal, setMG] = useState("");
+  const [notes, setNotes] = useState([]);
   const [filterTag, setFilter] = useState("all");
   const [showModal, setShowModal] = useState(false);
   const [editNote, setEditNote] = useState(null);
   const [now, setNow] = useState(new Date());
+  const [synced, setSynced] = useState(false);
+  const isRemote = useRef(false);
 
-  useEffect(() => { const t = setInterval(()=>setNow(new Date()), 60000); return ()=>clearInterval(t); }, []);
-  useEffect(() => { store.set("tt", todayTasks); }, [todayTasks]);
-  useEffect(() => { store.set("tm", tomorrowTasks); }, [tomorrowTasks]);
-  useEffect(() => { store.set("tg", todayGoal); }, [todayGoal]);
-  useEffect(() => { store.set("mg", tomorrowGoal); }, [tomorrowGoal]);
-  useEffect(() => { store.set("notes", notes); }, [notes]);
+  useEffect(() => {
+    const t = setInterval(() => setNow(new Date()), 60000);
+    return () => clearInterval(t);
+  }, []);
 
-  const addTask = (setter) => task => setter(p => [...p, task]);
-  const toggleTask = (setter) => id => setter(p => p.map(t => t.id===id ? {...t, done:!t.done} : t));
-  const delTask = (setter) => id => setter(p => p.filter(t => t.id!==id));
+  // Subscribe to Firebase
+  useEffect(() => {
+    if (!room) return;
+    setSynced(false);
+    const keys = [
+      ["tt", setTT],
+      ["tm", setTM],
+      ["tg", setTG],
+      ["mg", setMG],
+      ["notes", setNotes],
+    ];
+    keys.forEach(([key, setter]) => {
+      fbListen(room, key, val => {
+        isRemote.current = true;
+        setter(val || (key === "tg" || key === "mg" ? "" : []));
+        setSynced(true);
+        setTimeout(() => { isRemote.current = false; }, 0);
+      });
+    });
+    return () => keys.forEach(([key]) => fbOff(room, key));
+  }, [room]);
 
-  const saveNote = note => {
-    setNotes(p => editNote ? p.map(x => x.id===note.id ? note : x) : [note, ...p]);
-    setShowModal(false); setEditNote(null);
+  const push = (key, val) => { if (room) fbSet(room, key, val); };
+
+  // Tasks
+  const addTask = (list, setter, key) => task => {
+    const n = [...list, task]; setter(n); push(key, n);
+  };
+  const toggleTask = (list, setter, key) => id => {
+    const n = list.map(t => t.id === id ? {...t, done: !t.done} : t); setter(n); push(key, n);
+  };
+  const delTask = (list, setter, key) => id => {
+    const n = list.filter(t => t.id !== id); setter(n); push(key, n);
   };
 
-  const allTags = [...new Set([...DEFAULT_TAGS, ...notes.flatMap(n => n.tags)])];
-  const filtered = filterTag==="all" ? notes : notes.filter(n => n.tags.includes(filterTag));
-  const done = todayTasks.filter(t=>t.done).length;
+  // Notes
+  const saveNote = note => {
+    const n = editNote ? notes.map(x => x.id === note.id ? note : x) : [note, ...notes];
+    setNotes(n); push("notes", n);
+    setShowModal(false); setEditNote(null);
+  };
+  const delNote = id => {
+    const n = notes.filter(x => x.id !== id); setNotes(n); push("notes", n);
+  };
+
+  const joinRoom = () => {
+    const r = roomInput.trim().toLowerCase().replace(/\s+/g, "-");
+    if (!r) return;
+    localStorage.setItem("plannerRoom", r);
+    setRoom(r);
+  };
+
+  // ── Room Entry ──────────────────────────────────────────────
+  if (!room) {
+    return (
+      <div style={{ minHeight:"100vh", background:"#11111b", display:"flex", alignItems:"center", justifyContent:"center", padding:24 }}>
+        <div style={{ background:"#181825", border:"1px solid #2a2a3a", borderRadius:20, padding:36, width:"100%", maxWidth:420, textAlign:"center" }}>
+          <div style={{ fontSize:48, marginBottom:16 }}>📅</div>
+          <h2 style={{ color:"#e2e8f0", marginBottom:10, fontSize:24 }}>My Planner & Notes</h2>
+          <p style={{ color:"#64748b", fontSize:14, marginBottom:28, lineHeight:1.7 }}>
+            Enter a shared room code to sync with your partner.<br />
+            Use the <strong style={{color:"#a5b4fc"}}>same code</strong> on both devices.
+          </p>
+          <input
+            value={roomInput}
+            onChange={e => setRoomInput(e.target.value)}
+            onKeyDown={e => e.key === "Enter" && joinRoom()}
+            placeholder="e.g. maria-and-john"
+            style={{ width:"100%", background:"#1e1e2e", border:"2px solid #6366f1", borderRadius:10, padding:"13px 16px", color:"#e2e8f0", fontSize:16, marginBottom:14, textAlign:"center" }} />
+          <button onClick={joinRoom}
+            style={{ width:"100%", background:"#6366f1", border:"none", borderRadius:10, padding:"13px 0", color:"#fff", fontWeight:700, fontSize:16, cursor:"pointer" }}>
+            Enter Room →
+          </button>
+          <p style={{ color:"#334155", fontSize:12, marginTop:18, lineHeight:1.6 }}>
+            Anyone with the same room code can access this planner.<br />Choose something unique!
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  const allTags = [...new Set([...DEFAULT_TAGS, ...notes.flatMap(n => n.tags || [])])];
+  const filtered = filterTag === "all" ? notes : notes.filter(n => (n.tags||[]).includes(filterTag));
+  const doneCount = todayTasks.filter(t => t.done).length;
 
   const goalBox = { width:"100%", background:"#1e1e2e", border:"1px solid #333", borderRadius:8, padding:"10px 12px", color:"#e2e8f0", fontSize:15, resize:"vertical", minHeight:64 };
   const sec = { background:"#181825", border:"1px solid #2a2a3a", borderRadius:16, padding:20, marginBottom:18 };
@@ -220,42 +326,54 @@ function App() {
 
   return (
     <div style={{ minHeight:"100vh", background:"#11111b", paddingBottom:40 }}>
+
       {/* Header */}
-      <div style={{ background:"#181825", borderBottom:"1px solid #2a2a3a", padding:"env(safe-area-inset-top, 16px) 20px 14px", position:"sticky", top:0, zIndex:50 }}>
+      <div style={{ background:"#181825", borderBottom:"1px solid #2a2a3a", padding:"16px 20px 14px", position:"sticky", top:0, zIndex:50 }}>
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:10 }}>
           <div>
-            <div style={{ fontWeight:700, fontSize:19, color:"#e2e8f0" }}>My Planner & Notes</div>
-            <div style={{ color:"#475569", fontSize:13 }}>
+            <div style={{ fontWeight:700, fontSize:18, color:"#e2e8f0" }}>My Planner & Notes</div>
+            <div style={{ color:"#475569", fontSize:12 }}>
               {now.toLocaleDateString([],{weekday:"long",month:"long",day:"numeric"})} · {now.toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})}
+              <span style={{ marginLeft:8, fontSize:11, color: synced ? "#6ee7b7" : "#f59e0b" }}>
+                {synced ? "● synced" : "● connecting…"}
+              </span>
             </div>
           </div>
-          <div style={{ display:"flex", gap:6 }}>
+          <div style={{ display:"flex", gap:6, alignItems:"center" }}>
             {["planner","notes"].map(t => (
-              <button key={t} onClick={()=>setTab(t)}
-                style={{ border:"none", borderRadius:10, padding:"8px 18px", cursor:"pointer", fontWeight:600, fontSize:14,
-                  background:tab===t?"#6366f1":"#2a2a3a", color:tab===t?"#fff":"#94a3b8" }}>
-                {t==="planner" ? "📅 Planner" : "📝 Notes"}
+              <button key={t} onClick={() => setTab(t)}
+                style={{ border:"none", borderRadius:10, padding:"8px 16px", cursor:"pointer", fontWeight:600, fontSize:14,
+                  background: tab===t ? "#6366f1" : "#2a2a3a", color: tab===t ? "#fff" : "#94a3b8" }}>
+                {t === "planner" ? "📅 Planner" : "📝 Notes"}
               </button>
             ))}
+            <button title={"Room: " + room + "\nTap to leave"} onClick={() => { localStorage.removeItem("plannerRoom"); setRoom(""); setSynced(false); }}
+              style={{ background:"#2a2a3a", border:"none", borderRadius:10, padding:"8px 10px", color:"#64748b", cursor:"pointer", fontSize:15 }}>🚪</button>
           </div>
         </div>
       </div>
 
       <div style={{ maxWidth:700, margin:"0 auto", padding:"20px 16px" }}>
-        {tab==="planner" && (<>
+
+        {tab === "planner" && (<>
           {/* Today */}
           <div style={sec}>
             <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14 }}>
               <span style={{ fontWeight:700, fontSize:17, color:"#a5b4fc" }}>☀️ Today</span>
-              {todayTasks.length>0 && <span style={{ fontSize:13, color:"#64748b" }}>{done}/{todayTasks.length} done</span>}
+              {todayTasks.length > 0 && <span style={{ fontSize:13, color:"#64748b" }}>{doneCount}/{todayTasks.length} done</span>}
             </div>
             <label style={lbl}>Today's Goal</label>
-            <textarea style={goalBox} placeholder="What do you want to achieve today?" value={todayGoal} onChange={e=>setTG(e.target.value)} />
+            <textarea style={goalBox} placeholder="What do you want to achieve today?"
+              value={todayGoal} onChange={e => { setTG(e.target.value); push("tg", e.target.value); }} />
             <div style={{ marginTop:16 }}>
               <label style={lbl}>Tasks</label>
-              {todayTasks.length===0 && <div style={{ color:"#444", fontSize:14, padding:"6px 0" }}>No tasks yet.</div>}
-              {todayTasks.map(t => <TaskRow key={t.id} task={t} onToggle={toggleTask(setTT)} onDelete={delTask(setTT)} />)}
-              <AddTask onAdd={addTask(setTT)} />
+              {todayTasks.length === 0 && <div style={{ color:"#444", fontSize:14, padding:"6px 0" }}>No tasks yet.</div>}
+              {todayTasks.map(t => (
+                <TaskRow key={t.id} task={t}
+                  onToggle={toggleTask(todayTasks, setTT, "tt")}
+                  onDelete={delTask(todayTasks, setTT, "tt")} />
+              ))}
+              <AddTask onAdd={addTask(todayTasks, setTT, "tt")} />
             </div>
           </div>
 
@@ -263,35 +381,49 @@ function App() {
           <div style={sec}>
             <div style={{ fontWeight:700, fontSize:17, color:"#6ee7b7", marginBottom:14 }}>🌙 Tomorrow</div>
             <label style={lbl}>Tomorrow's Goal</label>
-            <textarea style={goalBox} placeholder="What do you want to tackle tomorrow?" value={tomorrowGoal} onChange={e=>setMG(e.target.value)} />
+            <textarea style={goalBox} placeholder="What do you want to tackle tomorrow?"
+              value={tomorrowGoal} onChange={e => { setMG(e.target.value); push("mg", e.target.value); }} />
             <div style={{ marginTop:16 }}>
               <label style={lbl}>Tasks</label>
-              {tomorrowTasks.length===0 && <div style={{ color:"#444", fontSize:14, padding:"6px 0" }}>No tasks planned yet.</div>}
-              {tomorrowTasks.map(t => <TaskRow key={t.id} task={t} onToggle={toggleTask(setTM)} onDelete={delTask(setTM)} />)}
-              <AddTask onAdd={addTask(setTM)} />
+              {tomorrowTasks.length === 0 && <div style={{ color:"#444", fontSize:14, padding:"6px 0" }}>No tasks planned yet.</div>}
+              {tomorrowTasks.map(t => (
+                <TaskRow key={t.id} task={t}
+                  onToggle={toggleTask(tomorrowTasks, setTM, "tm")}
+                  onDelete={delTask(tomorrowTasks, setTM, "tm")} />
+              ))}
+              <AddTask onAdd={addTask(tomorrowTasks, setTM, "tm")} />
             </div>
           </div>
         </>)}
 
-        {tab==="notes" && (<>
+        {tab === "notes" && (<>
           <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16, flexWrap:"wrap", gap:10 }}>
             <div style={{ display:"flex", flexWrap:"wrap", gap:6 }}>
-              <button onClick={()=>setFilter("all")}
+              <button onClick={() => setFilter("all")}
                 style={{ border:"none", borderRadius:99, padding:"5px 14px", cursor:"pointer", fontSize:13,
-                  background:filterTag==="all"?"#6366f1":"#2a2a3a", color:filterTag==="all"?"#fff":"#94a3b8" }}>All</button>
-              {allTags.map(t => <button key={t} onClick={()=>setFilter(t)}
-                style={{ border:"none", borderRadius:99, padding:"5px 14px", cursor:"pointer", fontSize:13,
-                  background:filterTag===t?"#312e81":"#2a2a3a", color:filterTag===t?"#a5b4fc":"#94a3b8" }}>#{t}</button>)}
+                  background: filterTag==="all" ? "#6366f1" : "#2a2a3a", color: filterTag==="all" ? "#fff" : "#94a3b8" }}>All</button>
+              {allTags.map(t => (
+                <button key={t} onClick={() => setFilter(t)}
+                  style={{ border:"none", borderRadius:99, padding:"5px 14px", cursor:"pointer", fontSize:13,
+                    background: filterTag===t ? "#312e81" : "#2a2a3a", color: filterTag===t ? "#a5b4fc" : "#94a3b8" }}>#{t}</button>
+              ))}
             </div>
-            <button onClick={()=>{setEditNote(null);setShowModal(true);}}
+            <button onClick={() => { setEditNote(null); setShowModal(true); }}
               style={{ background:"#6366f1", border:"none", borderRadius:10, padding:"9px 20px", color:"#fff", fontWeight:700, cursor:"pointer", fontSize:15 }}>+ New Note</button>
           </div>
-          {filtered.length===0 && <div style={{ textAlign:"center", color:"#444", padding:"50px 0", fontSize:16 }}>No notes yet — create one!</div>}
-          {filtered.map(n => <NoteCard key={n.id} note={n} onEdit={n=>{setEditNote(n);setShowModal(true);}} onDelete={id=>setNotes(p=>p.filter(x=>x.id!==id))} />)}
+          {filtered.length === 0 && <div style={{ textAlign:"center", color:"#444", padding:"50px 0", fontSize:16 }}>No notes yet — create one!</div>}
+          {filtered.map(n => (
+            <NoteCard key={n.id} note={n}
+              onEdit={n => { setEditNote(n); setShowModal(true); }}
+              onDelete={delNote} />
+          ))}
         </>)}
       </div>
 
-      {showModal && <NoteModal note={editNote} allTags={allTags} onSave={saveNote} onClose={()=>{setShowModal(false);setEditNote(null);}} />}
+      {showModal && (
+        <NoteModal note={editNote} allTags={allTags} onSave={saveNote}
+          onClose={() => { setShowModal(false); setEditNote(null); }} />
+      )}
     </div>
   );
 }
